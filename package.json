@@ -1,0 +1,12 @@
+{
+  "name": "cursor-pricing",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local dashboard for Cursor model pricing",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
