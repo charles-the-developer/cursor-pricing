@@ -1,5 +1,10 @@
-#!/usr/bin/env python3
-"""Local server for cursor_pricing — fetches live rates from Cursor docs."""
+"""Vercel serverless function -- GET /api/pricing.
+
+Mirrors server.py's scraping logic. Kept self-contained (no imports from the
+repo root) because Vercel's Python builder only reliably bundles the file
+under api/ itself -- see server.py for the local-dev equivalent and keep the
+two in sync if you change WANTED_MODELS or the parsing logic.
+"""
 
 from __future__ import annotations
 
@@ -7,14 +12,10 @@ import json
 import re
 import urllib.error
 import urllib.request
-import webbrowser
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
+from http.server import BaseHTTPRequestHandler
 
-ROOT = Path(__file__).resolve().parent
 PRICING_MD_URL = "https://cursor.com/docs/models-and-pricing.md"
 PRICING_PAGE_URL = "https://cursor.com/docs/models-and-pricing"
-DEFAULT_PORT = 8765
 
 WANTED_MODELS = [
     "Composer 2.5",
@@ -64,7 +65,7 @@ def fetch_pricing_markdown() -> str:
         PRICING_MD_URL,
         headers={"User-Agent": "cursor-pricing/1.0"},
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
+    with urllib.request.urlopen(request, timeout=20) as response:
         return response.read().decode("utf-8")
 
 
@@ -194,57 +195,23 @@ def build_response() -> list[dict]:
     return result
 
 
-class PricingHandler(SimpleHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=str(ROOT), **kwargs)
-
+class handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
-        if self.path == "/api/pricing":
-            self.handle_pricing()
-            return
-        super().do_GET()
-
-    def handle_pricing(self) -> None:
         try:
             payload = build_response()
-            body = json.dumps(payload).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self._send_json(200, payload)
         except urllib.error.URLError as exc:
-            self.send_json_error(502, f"Could not reach Cursor docs: {exc.reason}")
-        except Exception as exc:
-            self.send_json_error(500, str(exc))
+            self._send_json(502, {"error": f"Could not reach Cursor docs: {exc.reason}"})
+        except Exception as exc:  # noqa: BLE001 -- surface any scrape failure to the client
+            self._send_json(500, {"error": str(exc)})
 
-    def send_json_error(self, status: int, message: str) -> None:
-        body = json.dumps({"error": message}).encode("utf-8")
+    def _send_json(self, status: int, payload) -> None:
+        body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
-    def log_message(self, format: str, *args) -> None:
+    def log_message(self, format: str, *args) -> None:  # noqa: A002 -- match BaseHTTPRequestHandler signature
         print(f"[{self.log_date_time_string()}] {format % args}")
-
-
-def main() -> None:
-    server = ThreadingHTTPServer(("127.0.0.1", DEFAULT_PORT), PricingHandler)
-    url = f"http://127.0.0.1:{DEFAULT_PORT}/"
-    print(f"cursor_pricing running at {url}")
-    print("Press Ctrl+C to stop.")
-    try:
-        webbrowser.open(url)
-    except Exception:
-        pass
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("\nStopped.")
-        server.server_close()
-
-
-if __name__ == "__main__":
-    main()
