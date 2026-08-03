@@ -82,6 +82,7 @@
   .detail-top { display:flex; align-items:center; margin-bottom: 6px; }
   .detail-name { font-family: var(--mono); font-size: 14px; font-weight: 600; }
   .note { color: var(--dim); font-size: 12.5px; line-height:1.5; }
+  .note a { color: var(--amber); }
   .note.empty { font-style: italic; opacity: 0.6; }
 
   .skeleton { background: var(--panel); border:1px solid var(--line); border-radius:10px; height: 44px; margin-bottom:1px; position:relative; overflow:hidden; }
@@ -162,6 +163,14 @@ function fmtPrice(v) {
   return (v !== null && v !== undefined) ? `$${escapeHtml(v)}` : `<span class="missing">—</span>`;
 }
 
+function linkify(escapedStr) {
+  return escapedStr.replace(/https?:\/\/[^\s]+/g, (url) => {
+    const trailing = (url.match(/[.,;:]+$/) || [""])[0];
+    const clean = trailing ? url.slice(0, -trailing.length) : url;
+    return `<a href="${clean}" target="_blank" rel="noopener noreferrer">${clean}</a>${trailing}`;
+  });
+}
+
 function renderModels(models) {
   tableBody.innerHTML = models.map(m => {
     const variantTag = m.variant ? `<span class="variant-tag">${escapeHtml(m.variant)}</span>` : "";
@@ -179,7 +188,7 @@ function renderModels(models) {
   detailsEl.innerHTML = models.map(m => {
     const variantTag = m.variant ? `<span class="variant-tag">${escapeHtml(m.variant)}</span>` : "";
     const noteHtml = m.note
-      ? `<div class="note">${escapeHtml(m.note)}</div>`
+      ? `<div class="note">${linkify(escapeHtml(m.note))}</div>`
       : `<div class="note empty">no additional notes</div>`;
     return `
       <div class="detail-card">

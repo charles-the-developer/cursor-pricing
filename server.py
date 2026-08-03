@@ -13,11 +13,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PRICING_MD_URL = "https://cursor.com/docs/models-and-pricing.md"
+PRICING_PAGE_URL = "https://cursor.com/docs/models-and-pricing"
 DEFAULT_PORT = 8765
 
 WANTED_MODELS = [
     "Composer 2.5",
     "GPT-5.3 Codex",
+    "Grok 4.5",
     "Kimi K2.7 Code",
     "GPT-5.6 Sol",
     "GPT-5.6 Terra",
@@ -27,6 +29,16 @@ WANTED_MODELS = [
     "Claude Sonnet 5",
     "Claude Haiku 4.5",
 ]
+
+# Composer 2.5 and Grok 4.5 are Cursor's own "Cursor Models" pool. Their pricing
+# renders through a client-side component on the docs page's "Grok 4.5 pricing"
+# / "Composer pricing" sections and never appears in the "### Model pricing"
+# markdown table parsed below, so it can't be scraped. Values captured by hand
+# on 2026-08-03 -- if they look off, recheck them at PRICING_PAGE_URL.
+CURSOR_MODELS_POOL_PRICING = {
+    "Composer 2.5": {"input": 0.5, "cache_write": None, "cache_read": 0.2, "output": 2.5},
+    "Grok 4.5": {"input": 2.0, "cache_write": None, "cache_read": 0.5, "output": 6.0},
+}
 
 MODEL_ALIASES = {
     "Claude Haiku 4.5": "Claude 4.5 Haiku",
@@ -145,6 +157,18 @@ def build_response() -> list[dict]:
     result: list[dict] = []
 
     for wanted in WANTED_MODELS:
+        override = CURSOR_MODELS_POOL_PRICING.get(wanted)
+        if override:
+            result.append(
+                {
+                    "name": wanted,
+                    "variant": None,
+                    **override,
+                    "note": f"Not in Cursor's scrapable pricing table (Cursor Models pool) -- verify at {PRICING_PAGE_URL}",
+                }
+            )
+            continue
+
         match = find_model(wanted, rows)
         if match:
             result.append(

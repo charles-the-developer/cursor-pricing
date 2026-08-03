@@ -7,6 +7,7 @@ const HTML_PATH = path.join(__dirname, "cursor_pricing.html");
 
 const WANTED_MODELS = [
   "GPT-5.3 Codex",
+  "Grok 4.5",
   "GPT-5.6 Sol",
   "GPT-5.6 Terra",
   "GPT-5.6 Luna",
@@ -17,6 +18,21 @@ const WANTED_MODELS = [
   "Claude Sonnet 5",
   "Claude Haiku 4.5"
 ];
+
+const PRICING_PAGE_URL = "https://cursor.com/docs/models-and-pricing";
+
+// Composer 2.5 and Grok 4.5 are Cursor's own "Cursor Models" pool. Their pricing
+// renders through a client-side component on the docs page's "Grok 4.5 pricing"
+// / "Composer pricing" sections and is never present as scrapable text (web
+// search over the page can't see it either), so we can't ask Claude to find it.
+// Values captured by hand on 2026-08-03 -- if they look off, recheck them at
+// PRICING_PAGE_URL.
+const CURSOR_MODELS_POOL_PRICING = {
+  "Composer 2.5": { input: 0.5, cache_write: null, cache_read: 0.2, output: 2.5 },
+  "Grok 4.5": { input: 2.0, cache_write: null, cache_read: 0.5, output: 6.0 }
+};
+
+const SCRAPABLE_MODELS = WANTED_MODELS.filter((name) => !(name in CURSOR_MODELS_POOL_PRICING));
 
 function loadEnvFile() {
   const envPath = path.join(__dirname, ".env");
@@ -46,7 +62,7 @@ function buildSystemPrompt() {
     "https://cursor.com/docs/models/kimi-k2-7-code, or other model-specific pages under cursor.com/docs/models/ if needed). " +
     "Find per-million-token pricing (USD) for EXACTLY these models, matching as closely " +
     "as possible even if Cursor's page uses slightly different naming or lists variants (e.g. 'Fast'): " +
-    JSON.stringify(WANTED_MODELS) +
+    JSON.stringify(SCRAPABLE_MODELS) +
     ". " +
     "For each model, extract: input price, cache write price, cache read price, and output price " +
     "(all per million tokens). Not every model has cache write/read rates — use null if the page doesn't list one. " +
@@ -130,7 +146,19 @@ async function fetchPricing() {
     throw new Error(message);
   }
 
-  return parsePricingFromResponse(data);
+  return mergeCursorModelsPoolPricing(parsePricingFromResponse(data));
+}
+
+function mergeCursorModelsPoolPricing(scrapedModels) {
+  const overrides = Object.entries(CURSOR_MODELS_POOL_PRICING).map(([name, prices]) => ({
+    name,
+    variant: null,
+    ...prices,
+    note: `Not in Cursor's scrapable pricing table (Cursor Models pool) -- verify at ${PRICING_PAGE_URL}`
+  }));
+
+  const byWantedOrder = (a, b) => WANTED_MODELS.indexOf(a.name) - WANTED_MODELS.indexOf(b.name);
+  return [...scrapedModels, ...overrides].sort(byWantedOrder);
 }
 
 function sendJson(res, statusCode, payload) {
